@@ -38,9 +38,15 @@ class WindowProvider extends EventEmitter{
     this.win.on('ready-to-show', () => this.emit('show'));
     this.win.loadURL(this.url);
   }
-  eval(script){
-    return this.win.webContents.executeJavaScript(script, true);
+  eval(script, obj){
+    if(typeof(script) === 'function'){
+      obj = obj || {};
+      return this.win.webContents.executeJavaScript(`(${script.toString()})(JSON.parse(${JSON.stringify(JSON.stringify(obj))}))`, true);
+    }else{
+      return this.win.webContents.executeJavaScript(script, true);
+    }
   }
+  
   doc(){
     return this.win.webContents.executeJavaScript('document', true);
   }
@@ -62,14 +68,24 @@ const C2MUSIC = {
   PLAY:{
     INTERFACE:     Symbol('play'),
       PLAYTIME:    Symbol('playtime'),
+      TOTALTIME:   Symbol('totaltime'),
       PAUSE:       Symbol('pause'),
       PLAY:        Symbol("play"),
       SETVOLUME  : Symbol("set-volume"),
       GETVOLUME  : Symbol("get-volume"),
-      ISDONE     : Symbol("done"),
+      ISPAUSE    : Symbol("pause?"),
+      ISDONE     : Symbol("done?"),
       SEEK       : Symbol("seek"),
       LRC        : Symbol("lyric"),
       CURRENTLRC : Symbol("curlyric"),
+      GETMODE    : Symbol("getmode"),
+      SETMODE    : Symbol("setmode"),
+      LOOPMODE: {
+        SEQUENCE: 'sequence',
+        SINGLE  : 'single',
+        ALL     : 'all',
+        RANDOM  : 'random',
+      }
   }   
 };
 
@@ -82,6 +98,40 @@ class NeteasePlayer{
       return await this.win.eval(`
         document.querySelector(".g-btmbar .j-flag.time em").innerText
      `);
+    }
+  }
+
+  async [C2MUSIC.PLAY.TOTALTIME](){
+    if(this.win){
+      return await this.win.eval(function(){
+        return document.querySelector(".g-btmbar .j-flag.time").children[1].firstChild.nextSibling.nodeValue.replace("/", "").trim();
+      });
+    }
+  }
+
+  async [C2MUSIC.PLAY.ISPAUSE](){
+    if(this.win){
+      return await this.win.eval(function(){
+        return document.querySelector(".ply.j-flag").classList.contains("pas");
+      });
+    }
+  }
+
+  async _togglePlayPause(){
+    return await this.win.eval(function(){
+        document.querySelector(".ply.j-flag").click();
+    });
+  }
+
+  async [C2MUSIC.PLAY.PLAY](){
+    if(await this[C2MUSIC.PLAY.ISPAUSE]()){
+      await this._togglePlayPause();
+    }
+  }
+
+  async [C2MUSIC.PLAY.PAUSE](){
+    if(!await this[C2MUSIC.PLAY.ISPAUSE]()){
+      await this._togglePlayPause();
     }
   }
 
@@ -110,25 +160,93 @@ class NeteasePlayer{
     }
   }
 
+  async [C2MUSIC.PLAY.SETVOLUME](val){
+    if(this.win){
+      console.log(val);
+      await this.win.eval(function({val}){
+        let $ = document.querySelector.bind(document);
+        let bar = $(".vbg").getBoundingClientRect();
+        let ux  = (bar.left + bar.right) / 2;
+        let uy  = (bar.bottom - 10 - val / 100 * (bar.height - 20));
+        console.log(val, ux, uy);
+        $(".vbg").dispatchEvent(new MouseEvent("mousedown", {clientX: ux, clientY: uy}));
+        document.dispatchEvent(new MouseEvent("mouseup", {clientX: 0, clientY: 0}));
+      }, {val});
+    }
+  }
+
+  async [C2MUSIC.PLAY.GETVOLUME](){
+    if(this.win){
+      return await this.win.eval(function(){
+        let $ = document.querySelector.bind(document);
+        let h = +$(".vbg .curr").style.height.replace("px", "");
+        return Math.round(h / 93 * 100);
+      });
+    }
+  }
+
   async [C2MUSIC.PLAY.CURRENTLRC](){
     if(this.win){
-      return await this.win.eval(`(function(){
+      return await this.win.eval(function(){
+        if(!document.querySelector("[data-action='clear']")){
+          document.querySelector("[data-action='panel']").click();
+          return "";
+        }
         var a = document.querySelector(".j-flag.z-sel");
         if(a){
           return a.innerText;
         }else{
           return "";
         }
-      })()`);
+      });
     }
+  }
+
+  async [C2MUSIC.PLAY.GETMODE](){
+    let classList = await this.win.eval(function(){
+      let obj = document.querySelector('[data-action="mode"]');
+      return obj.classList;
+    });
+    switch(classList['1']){
+      case 'icn-loop':
+        return C2MUSIC.PLAY.LOOPMODE.ALL;
+      case 'icn-one':
+        return C2MUSIC.PLAY.LOOPMODE.SINGLE;
+      case 'icn-shuffle':
+        return C2MUSIC.PLAY.LOOPMODE.RANDOM;
+      default:
+        return '';
+    }
+  }
+  async [C2MUSIC.PLAY.SETMODE](mode){
+    let modeclass;
+    switch(mode){
+      case C2MUSIC.PLAY.LOOPMODE.ALL:
+        modeclass = 'icn-loop'; break;
+      case C2MUSIC.PLAY.LOOPMODE.SINGLE:
+        modeclass = 'icn-one'; break;
+      case C2MUSIC.PLAY.LOOPMODE.RANDOM:
+        modeclass = 'icn-shuffle'; break;
+    }
+    await this.win.eval(function({mode}){
+      
+      let f = function(){
+        let obj = document.querySelector('[data-action="mode"]');
+        console.log(mode, obj.classList);
+        if(obj.classList.contains(mode)) return;
+        obj.click();
+        setTimeout(f, 500);
+      };
+      f();
+    }, {mode: modeclass});
   }
 
   async [C2MUSIC.PLAY.LRC](){
     if(this.win){
-      return await this.win.eval(`(function(){
+      return await this.win.eval(function(){
         var a = document.querySelectorAll(".j-flag");
         return [].map.call(a, x => x.innerText);
-      })()`);
+      });
     }
   }
   
@@ -178,17 +296,10 @@ class Netease{
       let $w = this.$window;
       let win = new $w(`http://music.163.com/#/song?id=${id}`);
       win.on('ready', _ => {
-        //win.win.show();
+        // win.win.show();
         //win.win.hide();
         win.eval(`
-        let a = setInterval(_ => {
-           let doc = document.querySelector("#g_iframe").contentWindow.document;
-           let b = doc && doc.querySelector("a[data-res-action='play']");
-           if(b){
-             b.click();
-             clearInterval(a);  
-           }
-        }, 100);
+      
         let c = setInterval(_ => {
           let b = document.querySelector("[data-action='panel']");
           if(b){
@@ -198,7 +309,17 @@ class Netease{
               let b = document.querySelector("[data-action='clear']");
               if(b){
                 clearInterval(d);
+                  let a = setInterval(_ => {
+                    let doc = document.querySelector("#g_iframe").contentWindow.document;
+                    let b = doc && doc.querySelector("a[data-res-action='play']");
+                    if(b){
+                        b.click();
+                        clearInterval(a);  
+                    }
+                }, 100);
                 b.click();
+              }else{
+                document.querySelector("[data-action='panel']").click();
               }
             }, 100);
           }
@@ -228,13 +349,13 @@ const init = () => {
 
 
 let time = (a) => a.split(":").reduce((a, b) => +a * 60 + +b, 0);
+
 app.on('ready', async _ => {
   init();
   let id = 0;
   let IDS = {};
   M.on('play163', async (e, a) => {
     let netease  = new Netease();
-    console.log(a);
     let result   = await netease[C2MUSIC.SEARCH.INTERFACE](a.value);
     if(a.id){ IDS[a.id].close(); }
     let playable = await netease[C2MUSIC.PLAY.INTERFACE](result[0]);
@@ -253,6 +374,8 @@ app.on('ready', async _ => {
           author: song.author,
           album: song.album,
           curlrc: await playable[C2MUSIC.PLAY.CURRENTLRC](),
+          volume: await playable[C2MUSIC.PLAY.GETVOLUME](),
+          play:   !(await playable[C2MUSIC.PLAY.ISPAUSE]()),
         });
       }else{
         clearInterval(u);
@@ -263,6 +386,25 @@ app.on('ready', async _ => {
     if(a.id){
       let control = IDS[a.id];
       control[C2MUSIC.PLAY.SEEK](a.now, a.all);
+    }
+  });
+  M.on('setpause', async(e, a)=>{
+    if(a.id){
+      let control = IDS[a.id];
+      await control[C2MUSIC.PLAY.PAUSE]();
+    }
+  });
+  M.on('setplay', async(e, a)=>{
+    if(a.id){
+      let control = IDS[a.id];
+      await control[C2MUSIC.PLAY.PLAY]();
+    }
+  });
+  M.on('volume', async(e, a)=>{
+    if(a.id){
+      let control = IDS[a.id];
+      console.log(a.value);
+      await control[C2MUSIC.PLAY.SETVOLUME](a.value);
     }
   });
 });
