@@ -69,9 +69,7 @@
 <div id='app'></div>
 
 <script>
-  const { ipcRenderer } = require('electron')
-</script>
-<script type='module'>
+  const { ipcRenderer: R } = require('electron')
   let form = `
     <div @keyup.enter='play' class='app' style=' border-radius: 10px; border: 1px solid transparent; padding: 5px 15px'>
     <div class='menu-arrow' @click='onmenu'></div>
