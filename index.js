@@ -19,7 +19,7 @@ class WindowProvider extends EventEmitter{
     this.win = new BrowserWindow({width: 640, height: 480, show: false, webPreferences: {
       //sandbox: true,
       contextIsolation: true,
-      nodeIntegration: true,
+      nodeIntegration: false,
     }});
     this.url = url;
   }
@@ -342,7 +342,12 @@ class Netease{
 let mainWin;
 let {ipcMain: M} = require('electron');
 const init = () => {
-  mainWin = new BrowserWindow({show: true, width: 320, height: 160, frame: false, transparent: true, alwaysOnTop: true});
+  mainWin = new BrowserWindow({show: true, width: 320, height: 160, frame: false, transparent: true, alwaysOnTop: true, 
+webPreferences: {
+      //sandbox: true,
+      contextIsolation: false,
+      nodeIntegration: true,
+    }});
   mainWin.loadURL(`file:///${__dirname}/index.html`);
   mainWin.on('close', _ => app.quit());
 };
