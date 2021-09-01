@@ -68,8 +68,10 @@
 </style>
 <div id='app'></div>
 
-
 <script>
+  const { ipcRenderer } = require('electron')
+</script>
+<script type='module'>
   let form = `
     <div @keyup.enter='play' class='app' style=' border-radius: 10px; border: 1px solid transparent; padding: 5px 15px'>
     <div class='menu-arrow' @click='onmenu'></div>
@@ -109,7 +111,6 @@
     volume: 100,
   })
 
-  let {ipcRenderer: R} = require('electron');
   let temp = {};
   let app = new Vue({
     el: '#app',
