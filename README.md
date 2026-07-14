@@ -23,7 +23,3 @@ npm install
 electron .
 ```
 
-
-Donation
-===
-![donation](https://cdn.rawgit.com/RGSS3/c2m/dc5aa7f1/donation.png)
